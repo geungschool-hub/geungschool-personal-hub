@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow" />
+<title>개인 허브</title>
+<meta name="description" content="교사 전용 개인 작업 공간 (잠금)." />
+<style>
+  /* =========================================================
+     긍스쿨 — 개인 허브 (교사 전용·잠금)
+     · 내용(앱 목록·메모)은 AES-GCM으로 암호화되어 localStorage에만 저장.
+     · 비밀번호는 어디에도 저장하지 않음(평문/해시 모두 X). 틀리면 복호화 자체가 실패.
+     · 복구 불가 — 잊으면 백업(암호화 JSON) 또는 작업 폴더 원본에서 복구.
+     · 새 앱 추가/수정은 잠금 해제 후 앱 안에서 직접 (재배포 불필요).
+     ========================================================= */
+  :root{
+    --bg:#0f141c; --bg2:#161e2a; --panel:#1c2735; --panel2:#222f40;
+    --text:#e6edf6; --muted:#93a1b5; --line:#2e3b4d;
+    --accent:#5b9bff; --accent2:#3f7ddc; --good:#46c08a; --warn:#e0a341; --bad:#e0635a;
+    --shadow:0 10px 34px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0; height:100%;}
+  body{
+    font-family:'Pretendard',system-ui,-apple-system,'Segoe UI','Apple SD Gothic Neo',sans-serif;
+    color:var(--text);
+    background:
+      radial-gradient(1000px 460px at 50% -160px, #1c2942 0%, transparent 70%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+    background-attachment:fixed; min-height:100vh; line-height:1.6; -webkit-text-size-adjust:100%;
+  }
+  button,input,select,textarea{font-family:inherit;}
+  .hidden{display:none !important;}
+
+  /* ── 잠금 화면 ── */
+  .lock-screen{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;}
+  .lock-card{width:420px; max-width:100%; background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:34px 28px; box-shadow:var(--shadow); text-align:center;}
+  .lock-card .lk{font-size:48px; line-height:1;}
+  .lock-card h1{margin:14px 0 4px; font-size:24px; letter-spacing:-.4px;}
+  .lock-card .sub{color:var(--muted); font-size:14px; margin:0 0 22px;}
+  .lock-card label{display:block; text-align:left; font-size:12.5px; color:var(--muted); font-weight:700; margin:12px 4px 6px;}
+  .lock-card input[type=password]{width:100%; font-size:18px; padding:14px 16px; border:1.5px solid var(--line); border-radius:13px; background:var(--bg2); color:var(--text); letter-spacing:2px; min-height:54px;}
+  .lock-card input[type=password]:focus{outline:none; border-color:var(--accent);}
+  .lock-card .big{width:100%; margin-top:18px; font-size:17px; font-weight:800; padding:15px; border:none; border-radius:13px; background:var(--accent); color:#fff; cursor:pointer; min-height:56px;}
+  .lock-card .big:active{transform:translateY(1px);}
+  .lock-card .big:disabled{opacity:.6; cursor:default;}
+  .lock-msg{margin-top:14px; font-size:13.5px; min-height:18px; font-weight:700;}
+  .lock-msg.err{color:var(--bad);} .lock-msg.ok{color:var(--good);}
+  .lock-note{margin-top:18px; font-size:11.5px; color:var(--muted); line-height:1.7; text-align:left; background:var(--bg2); border:1px solid var(--line); border-radius:11px; padding:11px 13px;}
+  .lock-note b{color:#c6d3e3;}
+  .lock-foot{margin-top:16px; font-size:11px; color:#5e6c80;}
+  .lock-foot a{color:#6f8198; text-decoration:none;}
+
+  /* ── 메인 ── */
+  .app{display:none; min-height:100vh; flex-direction:column;}
+  .app.on{display:flex;}
+  header.bar{position:sticky; top:0; z-index:20; background:rgba(16,22,30,.86); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); padding:12px 18px; padding-top:max(12px, env(safe-area-inset-top)); display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  header.bar .brand{font-size:18px; font-weight:900; display:flex; align-items:center; gap:8px;}
+  header.bar .brand small{font-size:11px; font-weight:600; color:var(--muted);}
+  .bar-actions{margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  .tbtn{font-size:13.5px; font-weight:700; padding:10px 13px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); color:var(--text); cursor:pointer; min-height:44px;}
+  .tbtn:active{transform:translateY(1px);}
+  .tbtn.accent{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .tbtn.lock{background:transparent; border-color:#3a4a5e; color:var(--muted);}
+  .tbtn.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .menu-wrap{position:relative;}
+  .menu-pop{position:absolute; right:0; top:50px; background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); padding:7px; display:none; flex-direction:column; gap:2px; z-index:40; min-width:236px;}
+  .menu-pop.on{display:flex;}
+  .menu-pop button{font-size:14px; font-weight:600; text-align:left; padding:13px 14px; border:none; background:none; color:var(--text); border-radius:9px; cursor:pointer;}
+  .menu-pop button:active{background:var(--panel2);}
+  .menu-pop button.danger{color:var(--bad);}
+  .menu-pop hr{border:none; border-top:1px solid var(--line); margin:4px 0;}
+
+  .wrap{flex:1; width:100%; max-width:1080px; margin:0 auto; padding:22px 18px 80px;}
+  .controls{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:18px;}
+  .search{flex:1; min-width:180px; position:relative;}
+  .search input{width:100%; padding:12px 14px 12px 40px; font-size:15px; border:1px solid var(--line); border-radius:999px; background:var(--panel); color:var(--text); min-height:46px;}
+  .search input:focus{outline:none; border-color:var(--accent);}
+  .search .ic{position:absolute; left:14px; top:50%; transform:translateY(-50%); opacity:.5;}
+  .chips{display:flex; flex-wrap:wrap; gap:7px;}
+  .chip{border:1px solid var(--line); background:var(--panel); color:var(--muted); border-radius:999px; padding:8px 15px; font-size:13.5px; font-weight:600; cursor:pointer; min-height:40px;}
+  .chip.on{background:var(--accent); color:#fff; border-color:var(--accent);}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(250px,1fr)); gap:16px;}
+  .card{display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:18px; text-decoration:none; color:inherit; box-shadow:0 4px 16px rgba(0,0,0,.25); transition:transform .15s, box-shadow .15s, border-color .15s; position:relative; min-height:172px;}
+  a.card:hover{transform:translateY(-4px); box-shadow:0 12px 28px rgba(0,0,0,.4); border-color:#3a567f;}
+  .card-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:11px;}
+  .emoji{width:50px; height:50px; border-radius:14px; display:grid; place-items:center; font-size:27px; background:var(--panel2);}
+  .tag{font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:999px;}
+  .card h2{margin:0 0 6px; font-size:18px;}
+  .card p{margin:0; color:var(--muted); font-size:13.5px; flex:1;}
+  .card .note{margin-top:9px; font-size:12px; color:#c7a86a; background:rgba(224,163,65,.1); border:1px solid rgba(224,163,65,.28); border-radius:8px; padding:6px 9px; line-height:1.5; white-space:pre-wrap; word-break:break-word;}
+  .card .go{margin-top:12px; font-size:13.5px; font-weight:700; color:var(--accent);}
+  .card-edit{position:absolute; top:12px; right:12px; display:none; gap:6px;}
+  .app.editing .card-edit{display:flex;}
+  .app.editing a.card{cursor:default;}
+  .mini{width:34px; height:34px; border-radius:9px; border:1px solid var(--line); background:var(--panel2); color:var(--text); font-size:14px; cursor:pointer; display:grid; place-items:center;}
+  .mini.del{color:var(--bad);}
+  .add-card{display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; border:2px dashed #3a4a5e; background:transparent; color:var(--muted); border-radius:18px; min-height:172px; cursor:pointer; font-size:15px; font-weight:700;}
+  .add-card:hover{border-color:var(--accent); color:var(--accent);}
+  .add-card .pl{font-size:34px; line-height:1;}
+  .empty{grid-column:1/-1; text-align:center; color:var(--muted); padding:50px 0; font-size:15px; line-height:1.8;}
+
+  footer{margin-top:46px; padding-top:16px; border-top:1px solid var(--line); text-align:center; color:#5e6c80; font-size:11.5px;}
+
+  /* ── 모달 ── */
+  .modal-back{position:fixed; inset:0; background:rgba(0,0,0,.62); display:none; align-items:center; justify-content:center; z-index:100; padding:18px;}
+  .modal-back.on{display:flex;}
+  .modal{background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:22px; width:500px; max-width:100%; max-height:90vh; overflow-y:auto; box-shadow:var(--shadow);}
+  .modal h3{margin:0 0 14px; font-size:19px; color:#dbe6f3;}
+  .modal label{display:block; font-size:12.5px; color:var(--muted); font-weight:700; margin:13px 2px 6px;}
+  .modal input[type=text],.modal input[type=url],.modal input[type=password],.modal select,.modal textarea{width:100%; font-size:15px; padding:11px 13px; border:1.5px solid var(--line); border-radius:11px; background:var(--bg2); color:var(--text); min-height:46px;}
+  .modal textarea{min-height:70px; resize:vertical; line-height:1.6;}
+  .modal input:focus,.modal select:focus,.modal textarea:focus{outline:none; border-color:var(--accent);}
+  .emoji-row{display:flex; gap:8px; align-items:center;}
+  .emoji-row input{width:70px; text-align:center; font-size:22px;}
+  .modal .row{display:flex; gap:10px; justify-content:flex-end; margin-top:18px; flex-wrap:wrap;}
+  .modal .row .tbtn.go{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .modal .row .tbtn.danger{background:var(--bad); border-color:var(--bad); color:#fff; margin-right:auto;}
+  .modal p.hint{font-size:12.5px; color:var(--muted); line-height:1.65; margin:0 0 8px;}
+  .modal .warn{font-size:12.5px; color:#e6b15f; background:rgba(224,163,65,.1); border:1px solid rgba(224,163,65,.3); border-radius:10px; padding:10px 12px; line-height:1.6; margin-top:6px;}
+
+  .toast{position:fixed; left:50%; bottom:30px; transform:translateX(-50%) translateY(18px); background:#0b1018; border:1px solid var(--line); color:#fff; font-size:14px; font-weight:600; padding:12px 20px; border-radius:24px; box-shadow:var(--shadow); opacity:0; pointer-events:none; transition:.25s; z-index:200;}
+  .toast.on{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<!-- ════ 잠금 화면 ════ -->
+<div class="lock-screen" id="lockScreen">
+  <div class="lock-card">
+    <div class="lk">🔒</div>
+    <h1 id="lockTitle">개인 허브</h1>
+    <p class="sub" id="lockSub">교사 전용 공간입니다. 비밀번호를 입력하세요.</p>
+
+    <div id="setupFields" class="hidden">
+      <label for="pw1">새 비밀번호 (8자 이상 권장)</label>
+      <input type="password" id="pw1" autocomplete="new-password" inputmode="text" placeholder="••••••••">
+      <label for="pw2">비밀번호 확인</label>
+      <input type="password" id="pw2" autocomplete="new-password" placeholder="••••••••">
+    </div>
+    <div id="unlockFields">
+      <label for="pw0">비밀번호</label>
+      <input type="password" id="pw0" autocomplete="current-password" placeholder="••••••••">
+    </div>
+
+    <button class="big" id="lockBtn">잠금 해제</button>
+    <div class="lock-msg" id="lockMsg"></div>
+
+    <div class="lock-note" id="setupNote">
+      🔐 <b>이 화면은 진짜 암호화입니다.</b> 입력한 비밀번호로 내용을 직접 암호화/복호화하며, 비밀번호는 기기·서버 어디에도 저장하지 않습니다.
+      <br><br>⚠️ <b>분실 시 복구 불가</b> — 잊으면 이 기기의 내용은 열 수 없습니다(앱 정보 원본은 작업 폴더에 있으니 안심). 설정 후 <b>암호화 백업</b>을 받아두세요.
+    </div>
+    <div class="lock-foot"><a href="https://geungschool-hub.github.io/">← 긍스쿨 허브</a></div>
+  </div>
+</div>
+
+<!-- ════ 본체 ════ -->
+<div class="app" id="app">
+  <header class="bar">
+    <div class="brand">🗄️ 개인 허브 <small>교사 전용</small></div>
+    <div class="bar-actions">
+      <button class="tbtn" id="editToggle" onclick="toggleEdit()">✏ 편집</button>
+      <div class="menu-wrap">
+        <button class="tbtn" onclick="toggleMenu(event)">⋯</button>
+        <div class="menu-pop" id="menuPop">
+          <button onclick="openItem()">＋ 새 앱 추가</button>
+          <hr>
+          <button onclick="exportBackup()">⬇ 암호화 백업 내보내기</button>
+          <button onclick="pickImport()">⬆ 백업 가져오기</button>
+          <button onclick="exportDeployBlob()">📦 배포용 blob 복사</button>
+          <hr>
+          <button onclick="openChangePw()">🔑 비밀번호 변경</button>
+          <button class="danger" onclick="lockNow()">🔒 지금 잠그기</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="controls">
+      <div class="search"><span class="ic">🔍</span><input id="search" type="search" placeholder="앱·메모 검색" oninput="renderCards()"></div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <main class="grid" id="grid"></main>
+    <footer>Claude AI로 이 앱을 제작함 by 고은표 · 🔒 잠금 해제 시에만 표시</footer>
+  </div>
+</div>
+
+<!-- 앱 편집 모달 -->
+<div class="modal-back" id="itemBack">
+  <div class="modal">
+    <h3 id="itemTitle">새 앱 추가</h3>
+    <div class="emoji-row">
+      <div><label>아이콘</label><input type="text" id="f-emoji" maxlength="3" value="🔗"></div>
+      <div style="flex:1"><label>제목</label><input type="text" id="f-title" placeholder="앱 이름"></div>
+    </div>
+    <label>설명</label>
+    <input type="text" id="f-desc" placeholder="한 줄 설명">
+    <label>주소(URL)</label>
+    <input type="url" id="f-url" placeholder="https://…" inputmode="url">
+    <label>구분</label>
+    <input type="text" id="f-group" list="grouplist" placeholder="예: 학생관리 / 평가 / 개인업무 / 기록">
+    <datalist id="grouplist"></datalist>
+    <label>비공개 메모 <span style="color:#c7a86a; font-weight:400;">(관리자 PIN·주의사항 등 — 암호화 저장)</span></label>
+    <textarea id="f-note" placeholder="예) 관리자 학번 20700 / 학생 개인정보 포함 — 외부 공유 금지"></textarea>
+    <div class="row">
+      <button class="tbtn danger" id="f-del" onclick="deleteItem()">삭제</button>
+      <button class="tbtn" onclick="closeItem()">취소</button>
+      <button class="tbtn go" onclick="saveItem()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 비밀번호 변경 모달 -->
+<div class="modal-back" id="pwBack">
+  <div class="modal" style="width:420px;">
+    <h3>🔑 비밀번호 변경</h3>
+    <p class="hint">현재 비밀번호 확인 후 새 비밀번호로 전체 내용을 다시 암호화합니다.</p>
+    <label>현재 비밀번호</label>
+    <input type="password" id="cp-old" autocomplete="current-password">
+    <label>새 비밀번호 (8자 이상 권장)</label>
+    <input type="password" id="cp-new" autocomplete="new-password">
+    <label>새 비밀번호 확인</label>
+    <input type="password" id="cp-new2" autocomplete="new-password">
+    <div class="warn">변경 후에는 새 비밀번호로만 열립니다. 기존 백업 파일은 옛 비밀번호로 열리니 새로 백업하세요.</div>
+    <div class="row">
+      <button class="tbtn" onclick="closePw()">취소</button>
+      <button class="tbtn go" onclick="doChangePw()">변경</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="importFile" accept="application/json" style="display:none" onchange="importBackup(event)">
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* =========================================================
+   ▼ 배포용 암호화 blob — 잠금 해제 후 [⋯ → 배포용 blob 복사]로 만든 문자열을
+     여기에 붙여넣고 push 하면, 새 기기에서도 같은 내용을 (비밀번호 입력 후) 볼 수 있습니다.
+     비워두면 이 기기에서 처음 비밀번호를 설정할 때 아래 SEED로 시작합니다.
+   ========================================================= */
+const INITIAL_VAULT = "";
+
+/* 첫 설정 시 들어갈 기본 목록(공개 URL 예시 — 자유롭게 편집/삭제). 비공개 메모는 직접 추가하세요. */
+const SEED = { items: [
+  { id:"seed1", title:"발표 관찰 체크리스트", desc:"진로 심화 탐구 발표 교사용 체크·세특 도우미", url:"https://geungschool-hub.github.io/present-check/", group:"평가", emoji:"📋", note:"" },
+  { id:"seed2", title:"할 일 관리", desc:"교사 개인 할 일(todo).", url:"https://geungschool-hub.github.io/todo-geung/", group:"개인업무", emoji:"🗒️", note:"" },
+], note:"" };
+
+const STORE_KEY = "geungPersonalHubVault_v1";
+const enc = new TextEncoder(), dec = new TextDecoder();
+const PBKDF2_ITER = 250000;
+
+const GROUP_COLORS = {
+  "학생관리":{fg:"#ff8f8f", bg:"rgba(224,99,90,.16)"},
+  "평가":    {fg:"#8fb6ff", bg:"rgba(91,155,255,.16)"},
+  "개인업무":{fg:"#7fd6a8", bg:"rgba(70,192,138,.16)"},
+  "기록":    {fg:"#e6b15f", bg:"rgba(224,163,65,.16)"},
+  "수업":    {fg:"#c79bff", bg:"rgba(160,120,255,.18)"},
+};
+const DEFAULT_COLOR = {fg:"#aab6c6", bg:"rgba(150,165,185,.14)"};
+const colorOf = g => GROUP_COLORS[g] || DEFAULT_COLOR;
+
+/* 세션(메모리)에만 보관 — 잠금 시 즉시 폐기 */
+let sessionKey = null;     // CryptoKey (비추출)
+let vaultSalt = null;      // base64
+let vault = null;          // 평문 객체 {items, note}
+let editMode = false;
+let activeGroup = "전체";
+let editingId = null;
+let idleTimer = null;
+const IDLE_MS = 5 * 60 * 1000;   // 5분 미사용 자동 잠금
+
+/* ── base64 ── */
+function buf2b64(buf){ const u=new Uint8Array(buf); let s=""; for(let i=0;i<u.length;i++) s+=String.fromCharCode(u[i]); return btoa(s); }
+function b642buf(b64){ const bin=atob(b64); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u.buffer; }
+
+/* ── 키 유도/암복호 ── */
+async function deriveKey(password, saltBuf){
+  const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name:"PBKDF2", salt:saltBuf, iterations:PBKDF2_ITER, hash:"SHA-256" },
+    base, { name:"AES-GCM", length:256 }, false, ["encrypt","decrypt"]
+  );
+}
+async function encryptWith(key, saltB64, obj){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, enc.encode(JSON.stringify(obj)));
+  return JSON.stringify({ v:1, kdf:"PBKDF2", iter:PBKDF2_ITER, salt:saltB64, iv:buf2b64(iv.buffer), ct:buf2b64(ct) });
+}
+async function decryptWith(blobStr, password){
+  const b = JSON.parse(blobStr);
+  const key = await deriveKey(password, b642buf(b.salt));
+  const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:new Uint8Array(b642buf(b.iv))}, key, b642buf(b.ct));
+  return { obj: JSON.parse(dec.decode(pt)), key, saltB64:b.salt };
+}
+
+/* ── 저장된 blob ── */
+function storedBlob(){ return localStorage.getItem(STORE_KEY) || (INITIAL_VAULT && INITIAL_VAULT.trim()) || ""; }
+function isFirstRun(){ return !storedBlob(); }
+
+async function persist(){
+  if (!sessionKey || !vault) return;
+  vault.note = vault.note || "";
+  try{
+    const blob = await encryptWith(sessionKey, vaultSalt, vault);
+    localStorage.setItem(STORE_KEY, blob);
+  }catch(e){ toast("저장 실패: 공간이 부족할 수 있습니다"); }
+}
+
+/* ── 잠금 화면 ── */
+const $ = id => document.getElementById(id);
+function initLockUI(){
+  const first = isFirstRun();
+  $("setupFields").classList.toggle("hidden", !first);
+  $("unlockFields").classList.toggle("hidden", first);
+  $("lockTitle").textContent = first ? "개인 허브 — 비밀번호 설정" : "개인 허브";
+  $("lockSub").textContent = first ? "이 기기에서 쓸 비밀번호를 정하세요." : "교사 전용 공간입니다. 비밀번호를 입력하세요.";
+  $("lockBtn").textContent = first ? "비밀번호 설정하고 시작" : "잠금 해제";
+  $("setupNote").classList.toggle("hidden", false);
+  setMsg("");
+  (first ? $("pw1") : $("pw0")).focus();
+}
+function setMsg(t, cls){ const m=$("lockMsg"); m.textContent=t||""; m.className="lock-msg"+(cls?(" "+cls):""); }
+
+async function handleLock(){
+  const btn = $("lockBtn"); btn.disabled = true;
+  try{
+    if (isFirstRun()){
+      const p1=$("pw1").value, p2=$("pw2").value;
+      if (p1.length < 4){ setMsg("비밀번호가 너무 짧습니다(최소 4자, 8자 이상 권장).","err"); return; }
+      if (p1 !== p2){ setMsg("두 비밀번호가 일치하지 않습니다.","err"); return; }
+      setMsg("암호화 중…");
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const saltB64 = buf2b64(salt.buffer);
+      const key = await deriveKey(p1, salt.buffer);
+      sessionKey = key; vaultSalt = saltB64;
+      vault = JSON.parse(JSON.stringify(SEED));
+      await persist();
+      enterApp();
+    } else {
+      const pw = $("pw0").value;
+      if (!pw){ setMsg("비밀번호를 입력하세요.","err"); return; }
+      setMsg("확인 중…");
+      try{
+        const { obj, key, saltB64 } = await decryptWith(storedBlob(), pw);
+        sessionKey = key; vaultSalt = saltB64; vault = obj;
+        if (!vault.items) vault.items = [];
+        enterApp();
+      }catch(e){
+        await new Promise(r=>setTimeout(r, 600));   // 약한 throttle
+        setMsg("비밀번호가 올바르지 않습니다.","err");
+        $("pw0").value=""; $("pw0").focus();
+      }
+    }
+  } finally { btn.disabled = false; }
+}
+
+function enterApp(){
+  $("pw0").value=""; $("pw1") && ($("pw1").value=""); $("pw2") && ($("pw2").value="");
+  $("lockScreen").classList.add("hidden");
+  $("app").classList.add("on");
+  buildChips(); renderCards();
+  resetIdle();
+}
+function lockNow(){
+  closeMenu();
+  sessionKey = null; vault = null; vaultSalt = null; editMode=false;
+  $("app").classList.remove("on","editing");
+  $("editToggle").classList.remove("on"); $("editToggle").textContent="✏ 편집";
+  $("lockScreen").classList.remove("hidden");
+  clearTimeout(idleTimer);
+  initLockUI();
+}
+function resetIdle(){
+  clearTimeout(idleTimer);
+  if (sessionKey) idleTimer = setTimeout(()=>{ lockNow(); toast("자동 잠금되었습니다"); }, IDLE_MS);
+}
+
+/* ── 카드 렌더 ── */
+function buildChips(){
+  const box = $("chips"); box.innerHTML="";
+  const groups = ["전체", ...Array.from(new Set((vault.items||[]).map(i=>i.group).filter(Boolean)))];
+  groups.forEach(g=>{
+    const b=document.createElement("button");
+    b.className="chip"+(g===activeGroup?" on":"");
+    b.textContent=g;
+    b.onclick=()=>{ activeGroup=g; buildChips(); renderCards(); };
+    box.appendChild(b);
+  });
+  // datalist
+  const dl=$("grouplist"); dl.innerHTML="";
+  Array.from(new Set((vault.items||[]).map(i=>i.group).filter(Boolean))).forEach(g=>{ const o=document.createElement("option"); o.value=g; dl.appendChild(o); });
+}
+function esc(t){ return (t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function matches(it){
+  if (activeGroup!=="전체" && it.group!==activeGroup) return false;
+  const q=$("search").value.trim().toLowerCase();
+  if (!q) return true;
+  return (it.title+" "+it.desc+" "+(it.group||"")+" "+(it.note||"")).toLowerCase().includes(q);
+}
+function renderCards(){
+  resetIdle();
+  const grid=$("grid"); const list=(vault.items||[]).filter(matches);
+  grid.innerHTML="";
+  if (!list.length && !editMode){
+    grid.innerHTML=`<div class="empty">${(vault.items||[]).length? "조건에 맞는 앱이 없어요." : "아직 등록된 앱이 없어요.<br>오른쪽 위 <b>✏ 편집</b> → <b>＋</b> 로 추가하세요."}</div>`;
+    return;
+  }
+  list.forEach(it=>{
+    const col=colorOf(it.group);
+    const el=document.createElement(editMode?"div":"a");
+    el.className="card";
+    if (!editMode && it.url){ el.href=it.url; el.target="_blank"; el.rel="noopener noreferrer"; }
+    el.innerHTML=`
+      <div class="card-edit">
+        <button class="mini" title="수정" onclick="event.preventDefault();event.stopPropagation();openItem('${it.id}')">✏</button>
+        <button class="mini del" title="삭제" onclick="event.preventDefault();event.stopPropagation();openItem('${it.id}')">🗑</button>
+      </div>
+      <div class="card-top">
+        <div class="emoji">${esc(it.emoji)||"🔗"}</div>
+        ${it.group?`<span class="tag" style="color:${col.fg};background:${col.bg}">${esc(it.group)}</span>`:""}
+      </div>
+      <h2>${esc(it.title)||"(제목 없음)"}</h2>
+      <p>${esc(it.desc)}</p>
+      ${it.note?`<div class="note">🔒 ${esc(it.note)}</div>`:""}
+      ${(!editMode && it.url)?`<div class="go">열기 →</div>`:""}
+    `;
+    grid.appendChild(el);
+  });
+  if (editMode){
+    const add=document.createElement("div");
+    add.className="add-card";
+    add.innerHTML=`<span class="pl">＋</span><span>새 앱 추가</span>`;
+    add.onclick=()=>openItem();
+    grid.appendChild(add);
+  }
+}
+function toggleEdit(){
+  editMode=!editMode;
+  $("app").classList.toggle("editing", editMode);
+  const b=$("editToggle"); b.classList.toggle("on", editMode); b.textContent= editMode? "✓ 완료" : "✏ 편집";
+  renderCards();
+}
+
+/* ── 앱 추가/수정 ── */
+function openItem(id){
+  closeMenu(); resetIdle();
+  editingId = id || null;
+  const it = id ? (vault.items||[]).find(x=>x.id===id) : null;
+  $("itemTitle").textContent = it? "앱 수정" : "새 앱 추가";
+  $("f-emoji").value = it? (it.emoji||"🔗") : "🔗";
+  $("f-title").value = it? it.title : "";
+  $("f-desc").value = it? it.desc : "";
+  $("f-url").value = it? it.url : "";
+  $("f-group").value = it? (it.group||"") : "";
+  $("f-note").value = it? (it.note||"") : "";
+  $("f-del").style.display = it? "inline-block" : "none";
+  $("itemBack").classList.add("on");
+  setTimeout(()=>$("f-title").focus(), 50);
+}
+function closeItem(){ $("itemBack").classList.remove("on"); editingId=null; }
+async function saveItem(){
+  const data = {
+    emoji: $("f-emoji").value.trim()||"🔗",
+    title: $("f-title").value.trim(),
+    desc:  $("f-desc").value.trim(),
+    url:   $("f-url").value.trim(),
+    group: $("f-group").value.trim(),
+    note:  $("f-note").value.trim(),
+  };
+  if (!data.title){ toast("제목을 입력하세요"); return; }
+  if (!vault.items) vault.items=[];
+  if (editingId){
+    const it=vault.items.find(x=>x.id===editingId); if(it) Object.assign(it, data);
+  } else {
+    data.id = "it"+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36);
+    vault.items.push(data);
+  }
+  await persist();
+  closeItem(); buildChips(); renderCards();
+  toast("저장됨 ✓");
+}
+async function deleteItem(){
+  if (!editingId) return;
+  vault.items = (vault.items||[]).filter(x=>x.id!==editingId);
+  await persist();
+  closeItem(); buildChips(); renderCards();
+  toast("삭제됨");
+}
+
+/* ── 백업/복원/배포 ── */
+function exportBackup(){
+  closeMenu();
+  const blob = storedBlob(); if(!blob){ toast("내보낼 데이터가 없습니다"); return; }
+  const f = new Blob([blob], {type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(f);
+  a.download="개인허브_암호화백업.json"; a.click(); URL.revokeObjectURL(a.href);
+  toast("암호화 백업을 내려받았습니다");
+}
+function pickImport(){ closeMenu(); $("importFile").click(); }
+function importBackup(e){
+  const file=e.target.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{
+    const obj=JSON.parse(r.result);
+    if (!obj.ct || !obj.salt || !obj.iv) throw 0;
+    localStorage.setItem(STORE_KEY, r.result);
+    toast("백업을 불러왔습니다. 해당 비밀번호로 잠금 해제하세요");
+    lockNow();
+  }catch(_){ toast("올바른 암호화 백업 파일이 아닙니다"); } };
+  r.readAsText(file); e.target.value="";
+}
+function exportDeployBlob(){
+  closeMenu();
+  const blob = storedBlob(); if(!blob){ toast("복사할 데이터가 없습니다"); return; }
+  const done=()=>toast("배포용 blob 복사됨 — index.html의 INITIAL_VAULT에 붙여넣으세요");
+  if (navigator.clipboard) navigator.clipboard.writeText(blob).then(done, ()=>fallbackCopy(blob,done));
+  else fallbackCopy(blob, done);
+}
+function fallbackCopy(text, cb){ const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy"); cb&&cb();}catch(e){} document.body.removeChild(ta); }
+
+/* ── 비밀번호 변경 ── */
+function openChangePw(){ closeMenu(); resetIdle(); $("cp-old").value=""; $("cp-new").value=""; $("cp-new2").value=""; $("pwBack").classList.add("on"); }
+function closePw(){ $("pwBack").classList.remove("on"); }
+async function doChangePw(){
+  const oldp=$("cp-old").value, n1=$("cp-new").value, n2=$("cp-new2").value;
+  if (n1.length<4){ toast("새 비밀번호가 너무 짧습니다"); return; }
+  if (n1!==n2){ toast("새 비밀번호가 일치하지 않습니다"); return; }
+  try{
+    await decryptWith(storedBlob(), oldp);   // 현재 비번 검증
+  }catch(e){ toast("현재 비밀번호가 올바르지 않습니다"); return; }
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const saltB64 = buf2b64(salt.buffer);
+  sessionKey = await deriveKey(n1, salt.buffer); vaultSalt = saltB64;
+  await persist();
+  closePw(); toast("비밀번호가 변경되었습니다. 새 백업을 받아두세요");
+}
+
+/* ── 메뉴/토스트 ── */
+function toggleMenu(e){ e.stopPropagation(); $("menuPop").classList.toggle("on"); resetIdle(); }
+function closeMenu(){ $("menuPop").classList.remove("on"); }
+document.addEventListener("click", e=>{ if(!e.target.closest(".menu-wrap")) closeMenu(); });
+let _tt;
+function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("on"); clearTimeout(_tt); _tt=setTimeout(()=>t.classList.remove("on"),1900); }
+
+/* ── 활동 감지(자동 잠금) ── */
+["click","keydown","pointerdown"].forEach(ev=>document.addEventListener(ev, ()=>{ if(sessionKey) resetIdle(); }, {passive:true}));
+window.addEventListener("beforeunload", ()=>{ sessionKey=null; vault=null; });
+
+/* ── 시작 ── */
+$("lockBtn").addEventListener("click", handleLock);
+["pw0","pw1","pw2"].forEach(id=>{ const el=$(id); if(el) el.addEventListener("keydown", e=>{ if(e.key==="Enter") handleLock(); }); });
+initLockUI();
+</script>
+</body>
+</html>
