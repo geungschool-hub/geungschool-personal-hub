@@ -64,6 +64,7 @@
   .tbtn.accent{background:var(--accent); border-color:var(--accent); color:#fff;}
   .tbtn.lock{background:transparent; border-color:#3a4a5e; color:var(--muted);}
   .tbtn.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+  a.tbtn{text-decoration:none; display:inline-flex; align-items:center; justify-content:center;}
   .menu-wrap{position:relative;}
   .menu-pop{position:absolute; right:0; top:50px; background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); padding:7px; display:none; flex-direction:column; gap:2px; z-index:40; min-width:236px;}
   .menu-pop.on{display:flex;}
@@ -161,6 +162,7 @@
   <header class="bar">
     <div class="brand">🗄️ 개인 허브 <small>교사 전용</small></div>
     <div class="bar-actions">
+      <a class="tbtn" href="https://geungschool-hub.github.io/" title="긍스쿨 대문 허브로 돌아가기">🏠 긍스쿨 허브</a>
       <button class="tbtn" id="editToggle" onclick="toggleEdit()">✏ 편집</button>
       <div class="menu-wrap">
         <button class="tbtn" onclick="toggleMenu(event)">⋯</button>
