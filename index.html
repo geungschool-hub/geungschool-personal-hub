@@ -8,7 +8,7 @@
 <meta name="description" content="교사 전용 개인 작업 공간 (잠금)." />
 <style>
   /* =========================================================
-     긍스쿨 — 개인 허브 (교사 전용·잠금)
+     통합 허브 — 개인 허브 (교사 전용·잠금)
      · 내용(앱 목록·메모)은 AES-GCM으로 암호화되어 localStorage에만 저장.
      · 비밀번호는 어디에도 저장하지 않음(평문/해시 모두 X). 틀리면 복호화 자체가 실패.
      · 복구 불가 — 잊으면 백업(암호화 JSON) 또는 작업 폴더 원본에서 복구.
@@ -153,7 +153,7 @@
       🔐 <b>이 화면은 진짜 암호화입니다.</b> 입력한 비밀번호로 내용을 직접 암호화/복호화하며, 비밀번호는 기기·서버 어디에도 저장하지 않습니다.
       <br><br>⚠️ <b>분실 시 복구 불가</b> — 잊으면 이 기기의 내용은 열 수 없습니다(앱 정보 원본은 작업 폴더에 있으니 안심). 설정 후 <b>암호화 백업</b>을 받아두세요.
     </div>
-    <div class="lock-foot"><a href="https://geungschool-hub.github.io/">← 긍스쿨 허브</a></div>
+    <div class="lock-foot"><a href="https://geungschool-hub.github.io/">← 통합 허브</a></div>
   </div>
 </div>
 
@@ -162,7 +162,7 @@
   <header class="bar">
     <div class="brand">🗄️ 개인 허브 <small>교사 전용</small></div>
     <div class="bar-actions">
-      <a class="tbtn" href="https://geungschool-hub.github.io/" title="긍스쿨 대문 허브로 돌아가기">🏠 긍스쿨 허브</a>
+      <a class="tbtn" href="https://geungschool-hub.github.io/" title="통합 대문 허브로 돌아가기">🏠 통합 허브</a>
       <button class="tbtn" id="editToggle" onclick="toggleEdit()">✏ 편집</button>
       <div class="menu-wrap">
         <button class="tbtn" onclick="toggleMenu(event)">⋯</button>
